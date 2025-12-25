@@ -1,5 +1,8 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 import 'package:webview_flutter_android/webview_flutter_android.dart';
 import 'package:webview_flutter_wkwebview/webview_flutter_wkwebview.dart';
@@ -9,26 +12,79 @@ import 'package:emulator_checker/emulator_checker.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  bool isEmulator = await EmulatorChecker.isEmulator();
+  final isPhysical = await _isPhysicalDevice();
 
-  if (isEmulator) {
-    // If it's an emulator, you can display a message and prevent the app from starting
-    runApp(
-      const MaterialApp(
-        home: Scaffold(
-          body: Center(
-            child: Text(
-              'This application cannot be run on an emulator.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 20),
-            ),
+  if (!isPhysical) {
+    runApp(const MaterialApp(home: EmulatorBlockedScreen()));
+    return;
+  }
+
+  runApp(const MyApp());
+}
+
+Future<bool> _isPhysicalDevice() async {
+  bool isEmulatorFlag = false;
+  bool isNotPhysicalFromDeviceInfo = false;
+
+  try {
+    isEmulatorFlag = await EmulatorChecker.isEmulator();
+  } catch (e) {
+    debugPrint('EmulatorChecker error: $e');
+  }
+
+  try {
+    final deviceInfo = DeviceInfoPlugin();
+    if (Platform.isAndroid) {
+      final android = await deviceInfo.androidInfo;
+      final model = android.model.toLowerCase();
+      final product = android.product.toLowerCase();
+      final brand = android.brand.toLowerCase();
+      final hardware = android.hardware.toLowerCase();
+      final fingerprint = android.fingerprint.toLowerCase();
+      final manufacturer = android.manufacturer.toLowerCase();
+
+      final List<bool> emulatorIndicators = [
+        !android.isPhysicalDevice,
+        model.contains('sdk'),
+        model.contains('emulator'),
+        product.contains('sdk'),
+        product.contains('vbox'),
+        brand.contains('generic'),
+        hardware.contains('goldfish'),
+        hardware.contains('ranchu'),
+        fingerprint.contains('generic'),
+        manufacturer.contains('genymotion'),
+      ];
+
+      isNotPhysicalFromDeviceInfo = emulatorIndicators.any((flag) => flag);
+    } else if (Platform.isIOS) {
+      final ios = await deviceInfo.iosInfo;
+      isNotPhysicalFromDeviceInfo = !ios.isPhysicalDevice;
+    }
+  } catch (e) {
+    debugPrint('Device info emulator detection error: $e');
+  }
+
+  return !(isEmulatorFlag || isNotPhysicalFromDeviceInfo);
+}
+
+class EmulatorBlockedScreen extends StatelessWidget {
+  const EmulatorBlockedScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: Padding(
+          padding: EdgeInsets.symmetric(horizontal: 24.0),
+          child: Text(
+            'التطبيق متاح فقط على جهاز حقيقي.\nيُرجى تشغيله على هاتف أو جهاز لوحي فعلي.',
+            textAlign: TextAlign.center,
+            style: TextStyle(fontSize: 20, height: 1.4),
           ),
         ),
       ),
     );
-  } else {
-    // If it's a physical device, run your main app
-    runApp(const MyApp());
   }
 }
 
@@ -61,7 +117,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
   late final WebViewController _webViewController;
   double _loadingProgress = 0.0;
   bool _isLoading = true;
-  String? _errorMessage;
   bool _hasLoadedSuccessfully = false;
   final String _initialUrl = 'https://docacademy.anmka.com/';
 
@@ -104,7 +159,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
             setState(() {
               _loadingProgress = 0.0;
               _isLoading = true;
-              _errorMessage = null;
             });
           }
         },
@@ -203,7 +257,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
               _loadingProgress = 1.0;
               _isLoading = false;
               _hasLoadedSuccessfully = true;
-              _errorMessage = null;
             });
           }
         },
@@ -212,7 +265,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
           if (!_hasLoadedSuccessfully) {
             if (mounted) {
               setState(() {
-                _errorMessage = 'خطأ في تحميل الصفحة: ${error.description}';
                 _isLoading = false;
               });
             }
@@ -339,7 +391,6 @@ class _WebViewScreenState extends State<WebViewScreen> {
       setState(() {
         _loadingProgress = 0.0;
         _isLoading = true;
-        _errorMessage = null;
         _hasLoadedSuccessfully = false;
       });
     }
